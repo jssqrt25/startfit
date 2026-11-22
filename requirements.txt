@@ -1,0 +1,4 @@
+# StartFit environment bootstrap dependencies
+# Requires Python 3.9 or newer; Node.js, npm, and Jest are installed
+# after this Python package list by scripts/setup_environment.py.
+nodeenv==1.9.1
