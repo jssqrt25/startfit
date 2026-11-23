@@ -34,7 +34,12 @@
   }
   // 수업명·시간·중복 여부를 검증합니다.
   function validateCourse(course, existing) {
-    if (!course.name.trim()) throw Error("수업명을 입력해 주세요.");
+    const nameWithoutWhitespace = course.name.replace(/\s/g, "");
+    if (!nameWithoutWhitespace) throw Error("수업명을 입력해 주세요.");
+    if (
+      existing.some((c) => c.name.replace(/\s/g, "") === nameWithoutWhitespace)
+    )
+      throw Error("중복된 수업이 있습니다");
     if (!course.sessions.length) throw Error("수업 시간을 입력해 주세요.");
     const sessionsByDay = new Map();
     for (const c of existing) {

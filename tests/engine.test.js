@@ -38,6 +38,24 @@ describe("validateCourse", () => {
     expect(validateCourse(course, [])).toBe(true);
   });
 
+  test.each(["기초수학", "  기초 수학", "기초  수학"])(
+    "공백을 제외한 수업명이 같으면 %p을 중복으로 처리한다",
+    (name) => {
+      const existing = [
+        { name: "기초 수학  ", sessions: [{ day: 1, start: 540, end: 600 }] },
+      ];
+      const course = {
+        name,
+        sessions: [{ day: 2, start: 540, end: 600 }],
+      };
+
+      expect(() => validateCourse(course, existing)).toThrow(
+        "중복된 수업이 있습니다",
+      );
+      expect(validateCourse({ ...course, name: "응용 수학" }, existing)).toBe(true);
+    },
+  );
+
   test("종료와 시간이 같은 인접 수업은 허용한다", () => {
     const existing = [
       {
@@ -182,6 +200,20 @@ test("같은 과목의 다른 수업과 겹치는 수정은 거부한다", () =>
 
   expect(() => updateSession(db, "math", session, { start: 600, end: 690 }))
     .toThrow("같은 요일에 겹치는 수업이 있어요");
+});
+
+test("다른 수업과 같아지는 수업명 수정은 거부한다", () => {
+  const session = { day: 1, start: 540, end: 600 };
+  const db = {
+    courses: [
+      { id: "math", name: "수학", sessions: [session] },
+      { id: "english", name: "영어", sessions: [{ ...session, day: 2 }] },
+    ],
+  };
+
+  expect(() =>
+    updateSession(db, "math", session, { name: " 영 어 ", start: 540, end: 600 }),
+  ).toThrow("중복된 수업이 있습니다");
 });
 
 test("과목명을 바꾸고 선택한 수업을 다른 요일로 옮긴다", () => {

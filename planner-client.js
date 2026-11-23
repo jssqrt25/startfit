@@ -25,7 +25,7 @@ if (
       ? URL.createObjectURL(
           new Blob([embeddedPlanner], { type: "text/javascript" }),
         )
-      : "planner-worker.js?v=timetable8";
+      : "planner-worker.js?v=timetable10";
     planWorker = new Worker(workerURL);
     if (embeddedPlanner) URL.revokeObjectURL(workerURL);
     // 워커가 계산 결과를 보내면 해당 Promise를 완료합니다.
