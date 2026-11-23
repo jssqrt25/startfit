@@ -1050,6 +1050,25 @@ input[type="checkbox"] {
 .availability label {
   margin: 9px 0;
 }
+.settings-period {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+.settings-period .form-grid {
+  flex: 1;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.settings-period .remove-period {
+  flex-shrink: 0;
+  margin-bottom: 9px;
+  min-height: 46px;
+}
+#addStudyPeriod {
+  margin-top: 6px;
+}
 .picker-body {
   padding: 24px;
 }
@@ -1502,6 +1521,9 @@ input[type="checkbox"] {
   font-size: 12px;
   margin: 8px 0;
 }
+#confirmTime {
+  margin-top: 16px;
+}
 .time-columns {
   gap: 26px;
   margin-top: 14px;
@@ -1520,7 +1542,7 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  height: 252px;
+  height: min(252px, 38dvh);
   max-height: 252px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1559,12 +1581,24 @@ input[type="checkbox"] {
   letter-spacing: 2px;
   font-size: 42px;
 }
-.cancel-class-body {
-  padding: 26px;
-}
-.cancel-class-body #cancelClassInfo {
+#classInfo {
   font-weight: 650;
   line-height: 1.7;
+}
+.class-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.class-cancel .hint {
+  margin: 0;
+}
+.class-cancel .button {
+  flex-shrink: 0;
 }
 .cancelled-list {
   margin-top: 22px;
@@ -1642,13 +1676,10 @@ input[type="checkbox"] {
     flex-direction: column;
   }
   .time-choices {
-    height: 240px;
+    height: min(240px, 38dvh);
     max-height: 240px;
   }
-  .cancel-class-body {
-    padding: 22px;
-  }
-  .cancel-class-body .form-actions {
+  .class-cancel {
     flex-wrap: wrap;
   }
   .cancelled-item {

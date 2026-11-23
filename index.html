@@ -12,7 +12,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%23234839'/%3E%3Cpath d='M16 10L29 20L16 30Z' fill='%23d7f76f'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="style.css?v=holidays6" />
+    <link rel="stylesheet" href="style.css?v=timeconfirm1" />
   </head>
   <body>
     <!-- 좌측 브랜드와 주요 화면 이동 메뉴 -->
@@ -166,7 +166,7 @@
         </div>
       </form>
     </dialog>
-    <!-- 평일·주말 공부 가능 시간 설정 다이얼로그 -->
+    <!-- 요일별 공부 가능 시간 설정 다이얼로그 -->
     <dialog id="settingsDialog" aria-labelledby="settingsTitle">
       <form id="settingsForm">
         <div class="dialog-head">
@@ -174,53 +174,14 @@
           <button type="button" class="close" aria-label="닫기">×</button>
         </div>
         <p class="hint">이 시간에서 수업을 제외한 구간에 학습을 배정해요.</p>
+        <div class="day-tabs" id="settingsDays" role="group" aria-label="요일 선택"></div>
         <fieldset class="availability">
-          <legend>평일</legend>
+          <legend id="settingsDayTitle"></legend>
           <label class="check"
-            ><input name="weekdayEnabled" type="checkbox" />평일에 공부 계획
-            세우기</label
+            ><input name="enabled" type="checkbox" />이 요일에 공부 계획 세우기</label
           >
-          <div class="form-grid">
-            <label
-              >시작<input
-                name="weekdayStart"
-                class="time-input"
-                type="text"
-                readonly
-                aria-haspopup="dialog" /></label
-            ><label
-              >종료<input
-                name="weekdayEnd"
-                class="time-input"
-                type="text"
-                readonly
-                aria-haspopup="dialog"
-            /></label>
-          </div>
-        </fieldset>
-        <fieldset class="availability">
-          <legend>주말</legend>
-          <label class="check"
-            ><input name="weekendEnabled" type="checkbox" />주말에 공부 계획
-            세우기</label
-          >
-          <div class="form-grid">
-            <label
-              >시작<input
-                name="weekendStart"
-                class="time-input"
-                type="text"
-                readonly
-                aria-haspopup="dialog" /></label
-            ><label
-              >종료<input
-                name="weekendEnd"
-                class="time-input"
-                type="text"
-                readonly
-                aria-haspopup="dialog"
-            /></label>
-          </div>
+          <div id="settingsPeriods"></div>
+          <button type="button" class="button" id="addStudyPeriod">＋ 시간 추가</button>
         </fieldset>
         <p class="error" id="settingsError" role="alert"></p>
         <div class="form-actions">
@@ -235,7 +196,7 @@
         <div class="dialog-head">
           <div>
             <h2 id="timePickerTitle">시간 선택</h2>
-            <p class="hint">24시간제 · 분을 선택하면 적용돼요</p>
+            <p class="hint">24시간제 · 분을 누르거나 확인으로 적용해요</p>
           </div>
           <button
             type="button"
@@ -257,37 +218,46 @@
             <div id="minuteChoices" class="time-choices"></div>
           </section>
         </div>
+        <button type="button" class="button primary full" id="confirmTime">확인</button>
       </div>
     </dialog>
-    <!-- 선택한 날짜의 수업 휴강 확인 다이얼로그 -->
-    <dialog id="cancelClassDialog" aria-labelledby="cancelClassTitle">
-      <div class="cancel-class-body">
+    <!-- 수업 상세, 수정과 선택한 날짜의 휴강 다이얼로그 -->
+    <dialog id="classDialog" aria-labelledby="classTitle">
+      <form id="classForm">
         <div class="dialog-head">
-          <h2 id="cancelClassTitle">이 수업만 휴강할까요?</h2>
-          <button
-            type="button"
-            class="close"
-            id="closeCancelClass"
-            aria-label="휴강 창 닫기"
-          >
-            ×
-          </button>
+          <h2 id="classTitle">수업 상세</h2>
+          <button type="button" class="close" aria-label="닫기">×</button>
         </div>
-        <p id="cancelClassInfo"></p>
-        <p class="hint">
-          선택한 날짜의 수업만 시간표에서 제외해요. 다음 주 수업과 다른 요일의
-          수업은 그대로 유지됩니다.
-        </p>
-        <p class="hint">
-          비워진 시간은 공부 가능 시간 설정 안에서 학습 계획에 반영돼요.
-        </p>
-        <div class="form-actions">
-          <button type="button" class="button" id="keepClass">유지하기</button
-          ><button type="button" class="button primary" id="confirmCancelClass">
-            이 날짜만 휴강
-          </button>
+        <div id="classDetails">
+          <p id="classInfo"></p>
+          <div class="form-actions">
+            <button type="button" class="button cancel">닫기</button>
+            <button type="button" class="button primary" id="editClass">수정</button>
+          </div>
+          <div class="class-cancel">
+            <p class="hint">선택한 날짜의 수업만 시간표에서 빼요.</p>
+            <button type="button" class="button" id="confirmCancelClass">이 날짜만 휴강</button>
+          </div>
         </div>
-      </div>
+        <div id="classEditor" class="hidden">
+          <label>수업명<input name="courseName" maxlength="50" required /></label>
+          <label>요일<select name="day"></select></label>
+          <div class="form-grid">
+            <label
+              >시작<input name="start" class="time-input" type="text" readonly aria-haspopup="dialog"
+            /></label>
+            <label
+              >종료<input name="end" class="time-input" type="text" readonly aria-haspopup="dialog"
+            /></label>
+          </div>
+          <p class="hint">수업명은 과목 전체에, 요일과 시간은 선택한 반복 수업에 적용돼요.</p>
+          <p class="error" id="classError" role="alert"></p>
+          <div class="form-actions">
+            <button type="button" class="button" id="backToClass">취소</button>
+            <button type="submit" class="button primary">수정 저장</button>
+          </div>
+        </div>
+      </form>
     </dialog>
     <!-- 집중 타이머와 학습 결과 입력 다이얼로그 -->
     <dialog id="timerDialog">
@@ -325,9 +295,9 @@
     <!-- 저장·작업 결과를 잠시 알리는 메시지 영역 -->
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     <!-- 공통 엔진, 계획 계산기, 공휴일 API, 앱 화면 순서로 로드합니다. -->
-    <script src="engine.js?v=holidays6"></script>
-    <script src="planner-client.js?v=holidays6"></script>
+    <script src="engine.js?v=timetable8"></script>
+    <script src="planner-client.js?v=timetable8"></script>
     <script src="holidays.js?v=holidays6"></script>
-    <script src="app.js?v=holidays6"></script>
+    <script src="app.js?v=timeconfirm1"></script>
   </body>
 </html>

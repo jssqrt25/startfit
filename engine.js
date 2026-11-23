@@ -60,43 +60,86 @@
     }
     return true;
   }
-  // 예전 형식의 설정을 평일·주말 설정 구조로 변환합니다.
-  function normalizeSettings(s) {
-    if (s.weekday && typeof s.weekday === "object" &&
-        s.weekend && typeof s.weekend === "object") {
-      const normalizePeriod = (period, fallback) => ({
-        start: Number.isFinite(period.start) ? period.start : fallback.start,
-        end: Number.isFinite(period.end) ? period.end : fallback.end,
-        enabled: typeof period.enabled === "boolean"
-          ? period.enabled
-          : fallback.enabled,
-      });
-      return {
-        weekday: normalizePeriod(s.weekday, {
-          start: 540,
-          end: 1080,
-          enabled: true,
-        }),
-        weekend: normalizePeriod(s.weekend, {
-          start: 540,
-          end: 1080,
-          enabled: true,
-        }),
-      };
-    }
+  // 과목 이름과 선택한 반복 수업을 수정합니다.
+  function updateSession(db, courseId, previous, changes) {
+    const course = db.courses.find((c) => c.id === courseId);
+    const index = course?.sessions.findIndex(
+      (s) =>
+        s.day === previous.day &&
+        s.start === previous.start &&
+        s.end === previous.end,
+    );
+    if (index == null || index < 0)
+      throw Error("수업을 찾을 수 없어요. 시간표에서 다시 선택해 주세요.");
+
+    const { name = course.name, day = previous.day, start, end } = changes;
+    const sessions = [...course.sessions];
+    sessions[index] = { ...sessions[index], day, start, end };
+    const updated = { ...course, name: name.trim(), sessions };
+    validateCourse(updated, db.courses.filter((c) => c.id !== courseId));
+    const renameTasks =
+      updated.name !== course.name &&
+      !db.courses.some((c) => c.id !== courseId && c.name === course.name);
     return {
-      weekday: { start: s.start ?? 540, end: s.end ?? 1080, enabled: true },
-      weekend: {
-        start: s.start ?? 540,
-        end: s.end ?? 1080,
-        enabled: s.weekend !== false,
-      },
+      ...db,
+      courses: db.courses.map((c) => (c.id === courseId ? updated : c)),
+      tasks: renameTasks
+        ? db.tasks?.map((t) =>
+            t.subject === course.name ? { ...t, subject: updated.name } : t,
+          )
+        : db.tasks,
+      cancelledSessions: (db.cancelledSessions || []).flatMap((c) => {
+        const matches =
+          c.courseId === courseId &&
+          c.start === previous.start &&
+          c.end === previous.end &&
+          new Date(c.date + "T00:00:00").getDay() === previous.day;
+        if (!matches) return [c];
+        return day === previous.day ? [{ ...c, start, end }] : [];
+      }),
     };
+  }
+  // 평일·주말 또는 요일별 단일 시간 설정을 구간 목록으로 변환합니다.
+  function normalizeSettings(s = {}) {
+    const normalizePeriod = (period, fallback) => ({
+      start: Number.isFinite(period?.start) ? period.start : fallback.start,
+      end: Number.isFinite(period?.end) ? period.end : fallback.end,
+      enabled:
+        typeof period?.enabled === "boolean" ? period.enabled : fallback.enabled,
+    });
+    const shared = normalizePeriod(s, { start: 540, end: 1080, enabled: true });
+    const weekday = normalizePeriod(s.weekday, shared);
+    const weekend = normalizePeriod(s.weekend, {
+      ...shared,
+      enabled: s.weekend !== false,
+    });
+    const days = Array.from({ length: 7 }, (_, day) => {
+      const fallback = day === 0 || day === 6 ? weekend : weekday;
+      const config = s.days?.[day];
+      const { start, end, enabled } = normalizePeriod(config, fallback);
+      const periods = Array.isArray(config?.periods)
+        ? config.periods
+            .filter(
+              (p) =>
+                Number.isInteger(p?.start) &&
+                Number.isInteger(p?.end) &&
+                p.start >= 0 &&
+                p.end <= 1439 &&
+                p.start < p.end,
+            )
+            .map(({ start, end }) => ({ start, end }))
+            .sort((a, b) => a.start - b.start)
+        : [];
+      return {
+        enabled,
+        periods: periods.length ? periods : [{ start, end }],
+      };
+    });
+    return { days };
   }
   // 요일에 맞는 공부 가능 시간 설정을 반환합니다.
   function daySettings(s, day) {
-    const n = normalizeSettings(s);
-    return day === 0 || day === 6 ? n.weekend : n.weekday;
+    return normalizeSettings(s).days[day];
   }
   // 시작 시각으로부터 기본 수업 종료 시각을 계산합니다.
   function defaultEnd(start) {
@@ -133,6 +176,7 @@
   // 수업을 제외한 공부 가능 시간대를 여러 날짜에 걸쳐 계산합니다.
   function slots(db, base, days = 28) {
     const out = [];
+    const settings = normalizeSettings(db.settings).days;
     const sessionsByDay = Array.from({ length: 7 }, () => []);
     for (const [color, course] of db.courses.entries()) {
       for (const session of course.sessions) {
@@ -153,10 +197,8 @@
       const d = new Date(base);
       d.setDate(d.getDate() + i);
       const dow = d.getDay();
-      const config = daySettings(db.settings, dow);
+      const config = settings[dow];
       if (!config.enabled) continue;
-      const { start, end } = config;
-      let cursor = start;
       const date = dateKey(d);
       const classes = sessionsByDay[dow]
         .filter(
@@ -176,12 +218,22 @@
         if (to.getTime() > rounded)
           out.push({ start: rounded, end: to.getTime() });
       };
-      for (const c of classes) {
-        if (c.end <= start || c.start >= end) continue;
-        if (c.start > cursor) add(cursor, Math.min(c.start, end));
-        cursor = Math.max(cursor, c.end);
+      const windows = [];
+      for (const period of config.periods) {
+        const last = windows.at(-1);
+        if (last && period.start <= last.end)
+          last.end = Math.max(last.end, period.end);
+        else windows.push({ ...period });
       }
-      if (cursor < end) add(cursor, end);
+      for (const { start, end } of windows) {
+        let cursor = start;
+        for (const c of classes) {
+          if (c.end <= start || c.start >= end) continue;
+          if (c.start > cursor) add(cursor, Math.min(c.start, end));
+          cursor = Math.max(cursor, c.end);
+        }
+        if (cursor < end) add(cursor, end);
+      }
     }
     return out;
   }
@@ -291,6 +343,7 @@
     minutes,
     time,
     validateCourse,
+    updateSession,
     normalizeSettings,
     daySettings,
     defaultEnd,

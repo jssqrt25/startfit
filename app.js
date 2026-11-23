@@ -32,7 +32,7 @@ const deadline = (days) => {
 const emptyState = () => ({
   courses: [],
   tasks: [],
-  settings: E.normalizeSettings({ start: 540, end: 1080, weekend: true }),
+  settings: E.normalizeSettings(),
   records: [],
   cancelledSessions: [],
   sampleCleanup: 1,
@@ -104,6 +104,10 @@ function toast(text) {
 }
 // 요일 표시명과 시간표 과목별 색상 목록입니다.
 const dayNames = ["일", "월", "화", "수", "목", "금", "토"],
+  weekdayOrder = [1, 2, 3, 4, 5, 6, 0],
+  weekdayOptions = weekdayOrder
+    .map((day) => `<option value="${day}">${dayNames[day]}요일</option>`)
+    .join(""),
   colors = [
     ["#eaeef9", "#8f9ccc"],
     ["#f0ebf7", "#b199c5"],
@@ -332,12 +336,12 @@ function timetable() {
     classes: E.sessionsOn(db, d),
   }));
   const values = days.flatMap((x) => {
-    const c = E.daySettings(db.settings, x.d.getDay());
+    const c = db.settings.days[x.d.getDay()];
     const regular = db.courses
       .flatMap((c) => c.sessions)
       .filter((s) => s.day === x.d.getDay());
     return [
-      ...(c.enabled ? [c.start, c.end] : []),
+      ...(c.enabled ? c.periods.flatMap(({ start, end }) => [start, end]) : []),
       ...regular.flatMap((s) => [s.start, s.end]),
     ];
   });
@@ -346,30 +350,29 @@ function timetable() {
     height = Math.max(240, (max - min) * 1.1),
     scale = height / (max - min),
     selected = days.find((d) => d.key === selectedDate);
+  const selectedDay = selected.d.getDay();
+  const availability = db.settings.days[selectedDay];
+  const availableTimes = availability.enabled
+    ? availability.periods
+        .map(({ start, end }) => E.time(start) + "–" + E.time(end))
+        .join(" · ")
+    : "계획 없음";
   const cancellations = (db.cancelledSessions || []).filter(
     (c) =>
       days.some((d) => d.key === c.date) &&
       db.courses.some((x) => x.id === c.courseId),
   );
   const courseButton = (c, date, grid) =>
-    `<button class="${grid ? "class-block" : "mobile-class"}" data-cancel-course="${esc(c.courseId)}" data-class-date="${date}" data-class-start="${c.start}" data-class-end="${c.end}" style="${grid ? `top:${(c.start - min) * scale}px;height:${Math.max(3, (c.end - c.start) * scale)}px;` : ""}background:${colors[c.color % 4][0]};border-color:${colors[c.color % 4][1]}" aria-label="${esc(c.title)} ${date} ${E.time(c.start)} 수업 휴강 설정"><strong>${esc(c.title)}</strong><small>${E.time(c.start)}–${E.time(c.end)}</small>${grid ? "" : "<span>휴강 설정 ›</span>"}</button>`;
+    `<button class="${grid ? "class-block" : "mobile-class"}" data-class-course="${esc(c.courseId)}" data-class-date="${date}" data-class-start="${c.start}" data-class-end="${c.end}" style="${grid ? `top:${(c.start - min) * scale}px;height:${Math.max(3, (c.end - c.start) * scale)}px;` : ""}background:${colors[c.color % 4][0]};border-color:${colors[c.color % 4][1]}" aria-label="${esc(c.title)} ${date} ${E.time(c.start)} 수업 상세"><strong>${esc(c.title)}</strong><small>${E.time(c.start)}–${E.time(c.end)}</small>${grid ? "" : "<span>수업 상세 ›</span>"}</button>`;
   $("#content").innerHTML =
     heading(
       "나의 시간표",
       "",
       `<button class="button primary" id="newCourse">＋ 수업 등록</button>`,
     ) +
-    `<div class="availability-toolbar"><button class="button" data-settings>공부 가능 시간 설정</button>${[
-      "weekday",
-      "weekend",
-    ]
-      .map((k) => {
-        const v = E.daySettings(db.settings, k === "weekday" ? 1 : 6);
-        return `<span>${k === "weekday" ? "평일" : "주말"} <b>${v.enabled ? E.time(v.start) + "–" + E.time(v.end) : "계획 없음"}</b></span>`;
-      })
-      .join("")}</div>
+    `<div class="availability-toolbar"><button class="button" data-settings>공부 가능 시간 설정</button><span>${dayNames[selectedDay]}요일 <b>${availableTimes}</b></span></div>
  <div class="week-toolbar"><button class="button" id="prevWeek" ${weekOffset <= 0 ? "disabled" : ""} aria-label="이전 주">‹</button><strong>${fmtDate(dates[0])} – ${fmtDate(dates[6])}</strong><button class="button" id="nextWeek" ${weekOffset >= 3 ? "disabled" : ""} aria-label="다음 주">›</button></div>
- <p class="hint">수업을 누르면 선택한 날짜만 휴강 처리할 수 있어요.</p>
+ <p class="hint">수업을 누르면 정보를 수정하거나 선택한 날짜만 휴강할 수 있어요.</p>
  <div class="day-tabs class-day-tabs">${days.map((x) => `<button class="day-tab ${x.key === selectedDate ? "selected" : ""}" data-date="${x.key}" aria-pressed="${x.key === selectedDate}"><span>${dayNames[x.d.getDay()]}</span><b>${x.d.getDate()}</b>${holidayLabel(x.key) ? '<small class="holiday-dot" aria-label="공휴일">●</small>' : ""}</button>`).join("")}</div>
  <section class="panel desktop-calendar"><div class="table-scroll"><div class="calendar adaptive-calendar" style="--calendar-height:${height}px;--hour-height:${60 * scale}px"><div class="calendar-head"></div>${days.map((x) => `<div class="calendar-head ${holidayLabel(x.key) ? "holiday-day" : ""}">${dayNames[x.d.getDay()]} ${x.d.getDate()}${holidayLabel(x.key) ? `<small class="holiday-name">${esc(holidayLabel(x.key))}</small>` : ""}</div>`).join("")}<div class="hours">${Array.from({ length: (max - min) / 60 + 1 }, (_, i) => `<span class="hour" style="top:${i * 60 * scale}px">${E.time(min + i * 60)}</span>`).join("")}</div>${days.map((x) => `<div class="day-col">${x.classes.map((c) => courseButton(c, x.key, true)).join("")}</div>`).join("")}</div></div></section>
  <section class="mobile-class-list panel"><div class="panel-head"><h2>${fmtDate(selected.d)} ${dayNames[selected.d.getDay()]}요일</h2></div>${holidayLabel(selected.key) ? `<p class="holiday-label">${esc(holidayLabel(selected.key))}</p>` : ""}${selected.classes.map((c) => courseButton(c, selected.key, false)).join("") || '<p class="empty">이 날짜에는 수업이 없어요.</p>'}</section>
@@ -399,8 +402,8 @@ function timetable() {
       }),
   );
   document
-    .querySelectorAll("[data-cancel-course]")
-    .forEach((b) => (b.onclick = () => openClassCancellation(b.dataset)));
+    .querySelectorAll("[data-class-course]")
+    .forEach((b) => (b.onclick = () => openClass(b.dataset)));
   document.querySelectorAll("[data-restore]").forEach(
     (b) =>
       (b.onclick = () => {
@@ -434,42 +437,92 @@ function timetable() {
       }),
   );
 }
-// 현재 휴강 확인 창에서 처리할 수업 정보입니다.
-let pendingCancellation = null;
-// 선택한 날짜의 수업을 휴강 처리하는 확인 창을 엽니다.
-function openClassCancellation(data) {
-  pendingCancellation = {
-    courseId: data.cancelCourse,
+// 시간 수정이나 날짜별 휴강을 적용할 수업입니다.
+let selectedClass = null;
+const classForm = $("#classForm");
+classForm.elements.day.innerHTML = weekdayOptions;
+function setClassEditing(editing) {
+  $("#classDetails").classList.toggle("hidden", editing);
+  $("#classEditor").classList.toggle("hidden", !editing);
+  $("#classTitle").textContent = editing ? "수업 수정" : "수업 상세";
+}
+function openClass(data) {
+  const date = new Date(data.classDate + "T00:00:00");
+  selectedClass = {
+    courseId: data.classCourse,
     date: data.classDate,
+    day: date.getDay(),
     start: +data.classStart,
     end: +data.classEnd,
   };
-  const c = db.courses.find((c) => c.id === data.cancelCourse);
-  $("#cancelClassInfo").textContent =
-    `${c.name} · ${fmtDate(data.classDate + "T00:00")} ${E.time(+data.classStart)}–${E.time(+data.classEnd)}`;
-  $("#cancelClassDialog").showModal();
+  const course = db.courses.find((c) => c.id === selectedClass.courseId);
+  $("#classInfo").textContent =
+    `${course.name} · 매주 ${dayNames[selectedClass.day]}요일 ${E.time(selectedClass.start)}–${E.time(selectedClass.end)}`;
+  $("#confirmCancelClass").textContent = `${fmtDate(date)}만 휴강`;
+  setClassEditing(false);
+  $("#classDialog").showModal();
 }
-$("#closeCancelClass").onclick = $("#keepClass").onclick = () =>
-  $("#cancelClassDialog").close();
+$("#editClass").onclick = () => {
+  const course = db.courses.find((c) => c.id === selectedClass.courseId);
+  const fields = classForm.elements;
+  fields.courseName.value = course.name;
+  fields.day.value = selectedClass.day;
+  fields.start.value = E.time(selectedClass.start);
+  fields.end.value = E.time(selectedClass.end);
+  $("#classError").textContent = "";
+  setClassEditing(true);
+  fields.courseName.focus();
+};
+$("#backToClass").onclick = () => {
+  setClassEditing(false);
+  $("#editClass").focus();
+};
+classForm.onsubmit = (e) => {
+  e.preventDefault();
+  if ($("#classEditor").classList.contains("hidden")) return;
+  const fields = classForm.elements;
+  const day = Number(fields.day.value);
+  try {
+    const next = E.updateSession(db, selectedClass.courseId, selectedClass, {
+      name: fields.courseName.value,
+      day,
+      start: E.minutes(fields.start.value),
+      end: E.minutes(fields.end.value),
+    });
+    if (save(next)) {
+      const date = new Date(selectedClass.date + "T00:00:00");
+      const dayShift = weekdayOrder.indexOf(day) - weekdayOrder.indexOf(selectedClass.day);
+      date.setDate(date.getDate() + dayShift);
+      selectedDate = E.dateKey(date);
+      $("#classDialog").close();
+      render();
+      toast("수업을 수정하고 학습 계획을 갱신했어요.");
+    }
+  } catch (err) {
+    $("#classError").textContent = err.message;
+  }
+};
 $("#confirmCancelClass").onclick = () => {
-  if (!pendingCancellation) return;
+  const { courseId, date, start, end } = selectedClass;
   const next = structuredClone(db);
   if (
     !next.cancelledSessions.some(
       (c) =>
-        c.courseId === pendingCancellation.courseId &&
-        c.date === pendingCancellation.date &&
-        c.start === pendingCancellation.start &&
-        c.end === pendingCancellation.end,
+        c.courseId === courseId &&
+        c.date === date &&
+        c.start === start &&
+        c.end === end,
     )
   )
     next.cancelledSessions.push({
-      ...pendingCancellation,
+      courseId,
+      date,
+      start,
+      end,
       id: crypto.randomUUID(),
     });
   if (save(next)) {
-    $("#cancelClassDialog").close();
-    pendingCancellation = null;
+    $("#classDialog").close();
     render();
     toast("이 날짜만 휴강 처리했어요. 비워진 시간을 학습 계획에 반영했어요.");
   }
@@ -548,7 +601,7 @@ function planView() {
 }
 // 수업 등록 폼에 추가할 요일·시작·종료 입력 행을 생성합니다.
 function sessionRow() {
-  return `<div class="session-row"><label>요일<select class="day">${[1, 2, 3, 4, 5, 6, 0].map((v) => `<option value="${v}">${dayNames[v]}요일</option>`).join("")}</select></label><label>시작<input class="start" type="text" readonly aria-haspopup="dialog" value="09:00" required></label><label>종료<input class="end" type="text" readonly aria-haspopup="dialog" value="10:30" required></label></div>`;
+  return `<div class="session-row"><label>요일<select class="day">${weekdayOptions}</select></label><label>시작<input class="start" type="text" readonly aria-haspopup="dialog" value="09:00" required></label><label>종료<input class="end" type="text" readonly aria-haspopup="dialog" value="10:30" required></label></div>`;
 }
 // 분할 수업의 시간 연동 상태를 폼에 반영합니다.
 function syncSessionTimes() {
@@ -719,41 +772,119 @@ $("#taskForm").onsubmit = (e) => {
     toast("학습 정보를 저장했어요. 계획에도 반영했어요.");
   }
 };
-// 평일·주말 공부 가능 시간 설정 폼을 엽니다.
-function openSettings() {
-  const f = $("#settingsForm");
-  for (const k of ["weekday", "weekend"]) {
-    const v = E.daySettings(db.settings, k === "weekday" ? 1 : 6);
-    f.elements[k + "Start"].value = E.time(v.start);
-    f.elements[k + "End"].value = E.time(v.end);
-    f.elements[k + "Enabled"].checked = v.enabled;
-  }
+const settingsForm = $("#settingsForm");
+const settingsDays = $("#settingsDays");
+const settingsPeriods = $("#settingsPeriods");
+settingsDays.innerHTML = weekdayOrder
+  .map((day) => `<button type="button" class="day-tab" data-settings-day="${day}" aria-label="${dayNames[day]}요일" aria-pressed="false">${dayNames[day]}</button>`)
+  .join("");
+let settingsDay, settingsDraft;
+
+// 선택한 요일의 입력만 표시하고, 다른 요일의 편집 내용은 저장 전까지 보관합니다.
+function showSettingsDay(day) {
+  settingsDay = day;
+  const { enabled, periods } = settingsDraft[day];
+  settingsForm.elements.enabled.checked = enabled;
+  settingsPeriods.innerHTML = periods
+    .map(({ start, end }, index) => `
+    <div class="settings-period">
+      <div class="form-grid">
+        <label>시작<input class="time-input" name="start" type="text" value="${esc(start)}"
+          placeholder="선택" aria-label="${index + 1}번째 구간 시작" aria-haspopup="dialog" readonly></label>
+        <label>종료<input class="time-input" name="end" type="text" value="${esc(end)}"
+          placeholder="선택" aria-label="${index + 1}번째 구간 종료" aria-haspopup="dialog" readonly></label>
+      </div>
+      ${periods.length > 1 ? `<button type="button" class="button remove-period" data-remove-period="${index}" aria-label="${index + 1}번째 구간 삭제">삭제</button>` : ""}
+    </div>`)
+    .join("");
+  $("#settingsDayTitle").textContent = dayNames[day] + "요일";
   $("#settingsError").textContent = "";
+  for (const button of settingsDays.children) {
+    const active = Number(button.dataset.settingsDay) === day;
+    button.classList.toggle("selected", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+}
+function readSettingsDay() {
+  settingsDraft[settingsDay] = {
+    enabled: settingsForm.elements.enabled.checked,
+    periods: Array.from(settingsPeriods.children, (row) => ({
+      start: row.querySelector('[name="start"]').value,
+      end: row.querySelector('[name="end"]').value,
+    })),
+  };
+}
+function openSettings() {
+  settingsDraft = db.settings.days.map(({ enabled, periods }) => ({
+    enabled,
+    periods: periods.map(({ start, end }) => ({
+      start: E.time(start),
+      end: E.time(end),
+    })),
+  }));
+  const date =
+    view === "timetable" ? new Date(selectedDate + "T00:00:00") : new Date();
+  showSettingsDay(date.getDay());
   $("#settingsDialog").showModal();
 }
-// 공부 가능 시간 설정을 검증하고 저장합니다.
-$("#settingsForm").onsubmit = (e) => {
+settingsDays.onclick = (e) => {
+  const button = e.target.closest("[data-settings-day]");
+  if (!button) return;
+  readSettingsDay();
+  showSettingsDay(Number(button.dataset.settingsDay));
+};
+$("#addStudyPeriod").onclick = () => {
+  readSettingsDay();
+  settingsDraft[settingsDay].periods.push({ start: "", end: "" });
+  showSettingsDay(settingsDay);
+  settingsPeriods.lastElementChild.querySelector('[name="start"]').focus();
+};
+settingsPeriods.onclick = (e) => {
+  const button = e.target.closest("[data-remove-period]");
+  if (!button) return;
+  readSettingsDay();
+  const periods = settingsDraft[settingsDay].periods;
+  if (periods.length <= 1) return;
+  const index = Number(button.dataset.removePeriod);
+  periods.splice(index, 1);
+  showSettingsDay(settingsDay);
+  const nextButton = settingsPeriods.querySelector(
+    `[data-remove-period="${Math.min(index, periods.length - 1)}"]`,
+  );
+  (nextButton || $("#addStudyPeriod")).focus();
+};
+settingsForm.onsubmit = (e) => {
   e.preventDefault();
-  const f = e.target,
-    settings = {};
-  for (const k of ["weekday", "weekend"]) {
-    const start = E.minutes(f.elements[k + "Start"].value),
-      end = E.minutes(f.elements[k + "End"].value),
-      enabled = f.elements[k + "Enabled"].checked;
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
-      $("#settingsError").textContent =
-        (k === "weekday" ? "평일" : "주말") +
-        " 종료 시간은 시작보다 늦어야 해요.";
-      return;
+  readSettingsDay();
+  const days = settingsDraft.map(({ enabled, periods }) => ({
+    enabled,
+    periods: periods
+      .map(({ start, end }) => ({ start: E.minutes(start), end: E.minutes(end) }))
+      .sort((a, b) => a.start - b.start),
+  }));
+  for (const day of weekdayOrder) {
+    const { periods } = days[day];
+    let error = "";
+    if (
+      periods.some(({ start, end }) => !Number.isFinite(start) || !Number.isFinite(end) || start >= end)
+    ) {
+      error = "각 구간의 시작과 종료를 선택하고, 종료를 시작보다 늦게 설정해 주세요.";
+    } else if (
+      periods.some(({ start }, index) => index > 0 && start < periods[index - 1].end)
+    ) {
+      error = "공부 시간이 겹쳐요. 구간을 확인해 주세요.";
     }
-    settings[k] = { start, end, enabled };
+    if (!error) continue;
+    showSettingsDay(day);
+    $("#settingsError").textContent = dayNames[day] + "요일 · " + error;
+    settingsPeriods.querySelector('[name="start"]').focus();
+    return;
   }
-  const next = structuredClone(db);
-  next.settings = settings;
+  const next = { ...db, settings: { days } };
   if (save(next)) {
     $("#settingsDialog").close();
     render();
-    toast("평일·주말 공부 가능 시간을 저장했어요.");
+    toast("요일별 공부 가능 시간을 저장했어요.");
   }
 };
 // 시간 선택 목록에서 현재 선택 항목이 보이도록 스크롤합니다.
@@ -762,17 +893,15 @@ function centerTimeChoice(list, choice) {
     list.scrollTop =
       choice.offsetTop - list.clientHeight / 2 + choice.clientHeight / 2;
 }
-// 시간 선택 창의 대상 입력 요소와 현재 선택한 시입니다.
+// 시간 선택 창의 대상 입력 요소와 현재 선택한 시·분입니다.
 let pickerTarget = null,
-  pickerHour = 9;
-// 선택한 시와 분을 미리보기와 시간 버튼에 반영합니다.
+  pickerHour = 0,
+  pickerMinute = 0;
+// 선택한 시를 버튼과 시간 미리보기에 반영합니다.
 function pickerHours() {
   for (const b of $("#hourChoices").children)
     b.setAttribute("aria-pressed", String(+b.dataset.hour === pickerHour));
-  $("#timePreview").textContent =
-    String(pickerHour).padStart(2, "0") +
-    ":" +
-    (pickerTarget.value.split(":")[1] || "00");
+  $("#timePreview").textContent = E.time(pickerHour * 60 + pickerMinute);
 }
 // 텍스트 입력 대신 사용할 시간 선택 창을 엽니다.
 function openTime(input) {
@@ -781,7 +910,9 @@ function openTime(input) {
     return;
   }
   pickerTarget = input;
-  pickerHour = Math.floor(E.minutes(input.value) / 60) || 0;
+  const current = E.minutes(input.value) || 0;
+  pickerHour = Math.floor(current / 60);
+  pickerMinute = current % 60;
   $("#hourChoices").innerHTML = Array.from(
     { length: 24 },
     (_, h) =>
@@ -796,9 +927,8 @@ function openTime(input) {
   pickerHours();
   $("#timePicker").showModal();
   centerTimeChoice($("#hourChoices"), $('#hourChoices [aria-pressed="true"]'));
-  const minute = +input.value.split(":")[1];
   for (const b of $("#minuteChoices").children)
-    b.setAttribute("aria-pressed", String(+b.dataset.minute === minute));
+    b.setAttribute("aria-pressed", String(+b.dataset.minute === pickerMinute));
   centerTimeChoice(
     $("#minuteChoices"),
     $('#minuteChoices [aria-pressed="true"]'),
@@ -830,13 +960,13 @@ $("#hourChoices").onclick = (e) => {
     centerTimeChoice($("#hourChoices"), b);
   }
 };
-// 시간 선택 창의 분 버튼 이벤트로 값을 입력 요소에 적용합니다.
-$("#minuteChoices").onclick = (e) => {
-  const b = e.target.closest("[data-minute]");
-  if (!b) return;
-  const n = pickerHour * 60 + +b.dataset.minute;
-  pickerTarget.value = E.time(n);
-  if (pickerTarget.matches(".start")) {
+// 분 선택이나 확인으로 시간을 적용합니다.
+function applyPickerTime(minute) {
+  const n = pickerHour * 60 + minute;
+  const value = E.time(n);
+  const changed = pickerTarget.value !== value;
+  pickerTarget.value = value;
+  if (changed && pickerTarget.matches(".start")) {
     pickerTarget.closest(".session-row").querySelector(".end").value = E.time(
       E.defaultEnd(n),
     );
@@ -848,7 +978,12 @@ $("#minuteChoices").onclick = (e) => {
   pickerTarget.dispatchEvent(new Event("input", { bubbles: true }));
   $("#timePicker").close();
   pickerTarget.focus();
+}
+$("#minuteChoices").onclick = (e) => {
+  const b = e.target.closest("[data-minute]");
+  if (b) applyPickerTime(+b.dataset.minute);
 };
+$("#confirmTime").onclick = () => applyPickerTime(pickerMinute);
 // 시간 선택 창의 닫기 버튼을 연결합니다.
 $("#closePicker").onclick = () => $("#timePicker").close();
 // 선택한 학습 항목에 대한 집중 타이머를 시작합니다.
@@ -968,7 +1103,7 @@ $("#finishForm").onsubmit = (e) => {
   }
 };
 // 공통 닫기·취소 버튼을 각 다이얼로그에 연결합니다.
-for (const d of ["courseDialog", "taskDialog", "settingsDialog"]) {
+for (const d of ["courseDialog", "taskDialog", "settingsDialog", "classDialog"]) {
   document
     .querySelectorAll(`#${d} .close,#${d} .cancel`)
     .forEach((b) => (b.onclick = () => $("#" + d).close()));
